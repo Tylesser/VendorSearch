@@ -2,28 +2,24 @@
 
 # Tylesser - Vendor Search
 
-A World of Warcraft addon that adds a **search panel to the vendor window**. Find any item the vendor sells by name, type or equipment slot, see all of the vendor's items in one list with no paging, and jump to or buy them in one click.
+A World of Warcraft addon that adds a **search box to the vendor window**. Type part of an item's name, type or equipment slot and the vendor window shows only the matching items. No extra windows.
 
 ## Features
 
-- **Search box** next to the vendor window. Each word you type must match the item's **name**, **type**, **subtype** or **equipment slot**: `vial`, `recipe cooking`, `head`, `thread`…
-- **All items in one scrolling list**, with quality colours, stack size, limited stock and price (gold or tokens/currency).
-- **Click** a result to turn the vendor window to its page and make the item glow.
-- **Right-click** to buy, just like the vendor window. Items that cost tokens or currency are shown in the vendor window instead, so Blizzard's confirmation still appears.
-- **Shift-click** to link the item in chat, **Ctrl-click** to preview it in the dressing room.
-- **Enter** in the search box jumps to the first result.
-- Sort by **item name** or **price** (click a header to sort, again to reverse, a third time to return to the vendor's own order).
-- Filters: **Usable only** and **Affordable**.
-- Movable panel; your sort and filter settings are saved.
+- **Search box on the vendor window.** Each word you type must match the item's **name**, **type**, **subtype** or **equipment slot**: `vial`, `recipe cooking`, `head`, `thread`...
+- **Filters the vendor's own item grid**, across all pages. The page count updates to the matching items ("Page 1 of 2").
+- Matching items work exactly like normal: **right-click to buy**, tooltips, Shift-click to link, Ctrl-click to preview, drag to your bags. Items that cost tokens or currency still show Blizzard's confirmation.
+- Shows how many items match, or "No items match your search."
+- With an empty search box the vendor window looks and behaves exactly as without the addon.
+- The search is cleared when you close the vendor. The box hides on the Buyback tab.
+- **Alt-drag** the search box to move it; the position is saved.
 
 ## Usage
 
-Talk to any vendor. The search panel appears on the right of the vendor window.
+Talk to any vendor and type in the search box at the top of the vendor window.
 
-- `/vsearch`: open the panel and focus the search box
-- `/vsearch reset`: dock the panel next to the vendor window again after you moved it
-
-When the panel is closed, a **Search** button next to the vendor window opens it again.
+- `/vsearch`: put the cursor in the search box
+- `/vsearch reset`: move the search box back to its default place
 
 ## Installation
 

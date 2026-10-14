@@ -2,26 +2,17 @@ local addonName, ns = ...
 
 local eventFrame = CreateFrame("Frame")
 
+-- Item types/slots can arrive a moment after the vendor opens.
 local refreshPending = false
 local function RequestRefresh()
-  if refreshPending or not ns.UI:IsAttached() then
+  if refreshPending or not ns.Filter:IsActive() then
     return
   end
   refreshPending = true
   C_Timer.After(0.2, function()
     refreshPending = false
-    ns.UI:Refresh()
+    ns.Filter:Apply()
   end)
-end
-
-local function OnMerchantShow()
-  if MerchantFrame and MerchantFrame:IsShown() then
-    ns.UI:Attach(MerchantFrame)
-  end
-end
-
-local function OnMerchantHide()
-  ns.UI:Detach()
 end
 
 local handlers = {
@@ -35,44 +26,20 @@ local handlers = {
         VendorSearchDB[key] = value
       end
     end
-    if MerchantFrame then
-      MerchantFrame:HookScript("OnShow", OnMerchantShow)
-      MerchantFrame:HookScript("OnHide", OnMerchantHide)
-    end
+    ns.Filter:Create()
   end,
-  MERCHANT_SHOW = function()
-    C_Timer.After(0, OnMerchantShow)
+  MERCHANT_CLOSED = function()
+    ns.Filter:Clear()
   end,
-  MERCHANT_CLOSED = OnMerchantHide,
+  GET_ITEM_INFO_RECEIVED = RequestRefresh,
 }
 
-local refreshEvents = {
-  "MERCHANT_UPDATE",
-  "MERCHANT_FILTER_ITEM_UPDATE",
-  "GET_ITEM_INFO_RECEIVED",
-  "PLAYER_MONEY",
-  "BAG_UPDATE_DELAYED",
-}
-
--- Some events only exist on some clients; registering an unknown one errors.
-local function SafeRegister(event)
+for event in pairs(handlers) do
   pcall(eventFrame.RegisterEvent, eventFrame, event)
 end
 
-for event in pairs(handlers) do
-  SafeRegister(event)
-end
-for _, event in ipairs(refreshEvents) do
-  SafeRegister(event)
-end
-
 eventFrame:SetScript("OnEvent", function(_, event, ...)
-  local handler = handlers[event]
-  if handler then
-    handler(...)
-  else
-    RequestRefresh()
-  end
+  handlers[event](...)
 end)
 
 SLASH_VENDORSEARCH1 = "/vsearch"
@@ -80,19 +47,13 @@ SLASH_VENDORSEARCH2 = "/vendorsearch"
 SlashCmdList.VENDORSEARCH = function(msg)
   msg = strtrim(msg or ""):lower()
   if msg == "reset" then
-    ns.UI:ResetPosition()
-    print(ns.PREFIX .. "panel docked to the vendor window again.")
+    ns.Filter:ResetPosition()
+    print(ns.PREFIX .. "search box moved back to its default place.")
     return
   end
-  if not ns.UI:IsAttached() then
+  if not (MerchantFrame and MerchantFrame:IsShown()) then
     print(ns.PREFIX .. "talk to a vendor to search their items.")
     return
   end
-  if VendorSearchDB.shown then
-    ns.UI:FocusSearch()
-  else
-    VendorSearchDB.shown = true
-    ns.UI:UpdateVisibility()
-    ns.UI:FocusSearch()
-  end
+  ns.Filter:Focus()
 end

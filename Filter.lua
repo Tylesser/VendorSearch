@@ -1,0 +1,364 @@
+local _, ns = ...
+
+-- Filters the vendor window's own item grid. After Blizzard fills the page
+-- (MerchantFrame_UpdateMerchantInfo), each slot is refilled with the matching
+-- item and the button's ID is set to that item's real index, so Blizzard's
+-- own click, tooltip, drag and buy handlers keep working unchanged.
+local Filter = {}
+ns.Filter = Filter
+
+local box, countText, emptyText
+local originalNameColors = {}
+
+local function PerPage()
+  return MERCHANT_ITEMS_PER_PAGE or 10
+end
+
+local function Slot(i)
+  local merchantButton = _G["MerchantItem" .. i]
+  if not merchantButton then
+    return nil
+  end
+  return {
+    merchantButton = merchantButton,
+    itemButton = _G["MerchantItem" .. i .. "ItemButton"] or merchantButton.ItemButton,
+    name = _G["MerchantItem" .. i .. "Name"] or merchantButton.Name,
+    nameFrame = _G["MerchantItem" .. i .. "NameFrame"] or merchantButton.NameFrame,
+    money = _G["MerchantItem" .. i .. "MoneyFrame"] or merchantButton.MoneyFrame,
+    altCurrency = _G["MerchantItem" .. i .. "AltCurrencyFrame"] or merchantButton.AltCurrencyFrame,
+  }
+end
+
+local function Call(fn, ...)
+  if fn then
+    pcall(fn, ...)
+  end
+end
+
+local function Tint(slot, r, g, b, slotR, slotG, slotB)
+  Call(SetItemButtonNameFrameVertexColor, slot.merchantButton, r, g, b)
+  Call(SetItemButtonSlotVertexColor, slot.merchantButton, slotR or r, slotG or g, slotB or b)
+  Call(SetItemButtonTextureVertexColor, slot.itemButton, r, g, b)
+  Call(SetItemButtonNormalTextureVertexColor, slot.itemButton, r, g, b)
+end
+
+local function SetMoneyColor(money, color)
+  if SetMoneyFrameColorByFrame then
+    Call(SetMoneyFrameColorByFrame, money, color)
+  elseif SetMoneyFrameColor and money:GetName() then
+    Call(SetMoneyFrameColor, money:GetName(), color)
+  end
+end
+
+local function ClearSlot(slot)
+  local itemButton = slot.itemButton
+  itemButton.price, itemButton.hasItem, itemButton.name = nil, nil, nil
+  itemButton.link, itemButton.extendedCost = nil, nil
+  itemButton:Hide()
+  Tint(slot, 0.5, 0.5, 0.5, 0.4, 0.4, 0.4)
+  slot.name:SetText("")
+  if slot.money then
+    slot.money:Hide()
+  end
+  if slot.altCurrency then
+    slot.altCurrency:Hide()
+  end
+end
+
+-- Mirrors what MerchantFrame_UpdateMerchantInfo does for one slot.
+local function FillSlot(i, slot, item)
+  local index = item.index
+  local itemButton = slot.itemButton
+  local canAfford = CanAffordMerchantItem and CanAffordMerchantItem(index)
+
+  slot.name:SetText(item.name)
+  local color = item.quality and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[item.quality]
+  if color and color.r then
+    slot.name:SetTextColor(color.r, color.g, color.b)
+  end
+  Call(SetItemButtonCount, itemButton, item.stackCount)
+  Call(SetItemButtonStock, itemButton, item.numAvailable)
+  Call(SetItemButtonTexture, itemButton, item.icon)
+  Call(SetItemButtonQuality, itemButton, item.quality, item.link)
+
+  itemButton.name = item.name
+  itemButton.link = item.link
+  itemButton.texture = item.icon
+  itemButton.extendedCost = item.hasExtendedCost or nil
+  if item.hasExtendedCost and item.price <= 0 then
+    itemButton.price = nil
+  else
+    itemButton.price = item.price
+  end
+
+  local altWidth = 0
+  if item.hasExtendedCost and slot.altCurrency and MerchantFrame_UpdateAltCurrency then
+    local ok, width = pcall(MerchantFrame_UpdateAltCurrency, index, i, canAfford)
+    altWidth = ok and width or 0
+    slot.altCurrency:ClearAllPoints()
+    if item.price > 0 and slot.money then
+      slot.altCurrency:SetPoint("LEFT", slot.money, "RIGHT", -14, 0)
+    elseif slot.nameFrame then
+      slot.altCurrency:SetPoint("BOTTOMLEFT", slot.nameFrame, "BOTTOMLEFT", 0, 31)
+    end
+    slot.altCurrency:Show()
+  elseif slot.altCurrency then
+    slot.altCurrency:Hide()
+  end
+
+  if slot.money then
+    if item.price > 0 or not item.hasExtendedCost then
+      if MoneyFrame_SetMaxDisplayWidth and MAX_MONEY_DISPLAY_WIDTH then
+        Call(MoneyFrame_SetMaxDisplayWidth, slot.money, MAX_MONEY_DISPLAY_WIDTH - altWidth)
+      end
+      MoneyFrame_Update(slot.money, item.price)
+      SetMoneyColor(slot.money, canAfford == false and "red" or nil)
+      slot.money:Show()
+    else
+      slot.money:Hide()
+    end
+  end
+
+  if item.numAvailable == 0 then
+    if item.isUsable then
+      Tint(slot, 0.5, 0.5, 0.5)
+    else
+      Tint(slot, 0.5, 0, 0)
+    end
+  elseif not item.isUsable then
+    Tint(slot, 1, 0, 0)
+  else
+    Tint(slot, 1, 1, 1)
+  end
+
+  itemButton.hasItem = true
+  itemButton:SetID(index)
+  itemButton:Show()
+end
+
+local function RememberNameColor(i, slot)
+  if not originalNameColors[i] then
+    originalNameColors[i] = {slot.name:GetTextColor()}
+  end
+end
+
+local function RestoreNameColors()
+  for i, rgb in pairs(originalNameColors) do
+    local slot = Slot(i)
+    if slot then
+      slot.name:SetTextColor(rgb[1], rgb[2], rgb[3])
+    end
+  end
+end
+
+local function UpdatePaging(page, pages, total)
+  local multiple = total > PerPage()
+  if MerchantPageText then
+    MerchantPageText:SetFormattedText(MERCHANT_PAGE_NUMBER or "Page %s of %s", page, pages)
+    MerchantPageText:SetShown(multiple)
+  end
+  if MerchantPrevPageButton then
+    MerchantPrevPageButton:SetShown(multiple)
+    MerchantPrevPageButton:SetEnabled(page > 1)
+  end
+  if MerchantNextPageButton then
+    MerchantNextPageButton:SetShown(multiple)
+    MerchantNextPageButton:SetEnabled(page < pages)
+  end
+end
+
+function Filter:IsActive()
+  return box ~= nil and #ns.ParseQuery(box:GetText()) > 0
+end
+
+-- Called after Blizzard has filled the current merchant page.
+function Filter:Apply()
+  if not (box and MerchantFrame and MerchantFrame:IsShown() and MerchantFrame.selectedTab == 1) then
+    return
+  end
+  local terms = ns.ParseQuery(box:GetText())
+  if #terms == 0 then
+    countText:SetText("")
+    emptyText:Hide()
+    return
+  end
+
+  local results = {}
+  for _, item in ipairs(ns.ScanMerchant()) do
+    if ns.Matches(item, terms) then
+      table.insert(results, item)
+    end
+  end
+
+  local perPage = PerPage()
+  local pages = math.max(1, math.ceil(#results / perPage))
+  MerchantFrame.page = math.min(math.max(MerchantFrame.page or 1, 1), pages)
+  local first = (MerchantFrame.page - 1) * perPage
+
+  for i = 1, perPage do
+    local slot = Slot(i)
+    if slot and slot.itemButton and slot.name then
+      RememberNameColor(i, slot)
+      local item = results[first + i]
+      if item then
+        FillSlot(i, slot, item)
+      else
+        ClearSlot(slot)
+      end
+    end
+  end
+
+  UpdatePaging(MerchantFrame.page, pages, #results)
+  countText:SetText(#results == 1 and "1 match" or (#results .. " matches"))
+  emptyText:SetShown(#results == 0)
+end
+
+-- Re-run Blizzard's update (our hook then filters it) from the first page.
+function Filter:Refresh(resetPage)
+  if not (MerchantFrame and MerchantFrame:IsShown()) then
+    return
+  end
+  RestoreNameColors()
+  if resetPage then
+    MerchantFrame.page = 1
+  end
+  if MerchantFrame_Update then
+    MerchantFrame_Update()
+  end
+end
+
+function Filter:UpdateVisibility()
+  if not box then
+    return
+  end
+  local onMerchantTab = MerchantFrame.selectedTab == 1
+  box:SetShown(onMerchantTab)
+  countText:SetShown(onMerchantTab)
+  if not onMerchantTab then
+    emptyText:Hide()
+  end
+end
+
+--------------------------------------------------------------------------------
+-- Search box
+--------------------------------------------------------------------------------
+-- Classic-style merchant art has a wide frame with transparent padding.
+local function DefaultOffset()
+  if MerchantFrame:GetWidth() >= 370 then
+    return 74, -44
+  end
+  return 64, -32
+end
+
+local function ApplyBoxPosition()
+  local x, y
+  if VendorSearchDB.boxOffset then
+    x, y = VendorSearchDB.boxOffset[1], VendorSearchDB.boxOffset[2]
+  else
+    x, y = DefaultOffset()
+  end
+  box:ClearAllPoints()
+  box:SetPoint("TOPLEFT", MerchantFrame, "TOPLEFT", x, y)
+end
+
+function Filter:ResetPosition()
+  VendorSearchDB.boxOffset = nil
+  if box then
+    ApplyBoxPosition()
+  end
+end
+
+function Filter:Focus()
+  if box and box:IsVisible() then
+    box:SetFocus()
+  end
+end
+
+function Filter:Clear()
+  if box and box:GetText() ~= "" then
+    box:SetText("")
+  end
+  RestoreNameColors()
+  if emptyText then
+    emptyText:Hide()
+  end
+end
+
+function Filter:Create()
+  if box or not MerchantFrame then
+    return
+  end
+
+  local ok, created = pcall(CreateFrame, "EditBox", "VendorSearchBox", MerchantFrame, "SearchBoxTemplate")
+  if ok then
+    box = created
+  else
+    box = CreateFrame("EditBox", "VendorSearchBox", MerchantFrame, "InputBoxTemplate")
+  end
+  box:SetSize(140, 20)
+  box:SetAutoFocus(false)
+  box:SetFrameLevel(MerchantFrame:GetFrameLevel() + 10)
+  if box.Instructions then
+    box.Instructions:SetText("Search items")
+  end
+  ApplyBoxPosition()
+
+  box:HookScript("OnTextChanged", function()
+    Filter:Refresh(true)
+  end)
+  box:SetScript("OnEnterPressed", function(self)
+    self:ClearFocus()
+  end)
+  box:SetScript("OnEscapePressed", function(self)
+    self:ClearFocus()
+  end)
+  box:HookScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+    GameTooltip:SetText("Vendor Search", 1, 0.82, 0)
+    GameTooltip:AddLine("Type part of an item's name, type or slot,", 1, 1, 1)
+    GameTooltip:AddLine("e.g. vial, recipe cooking, head.", 1, 1, 1)
+    GameTooltip:AddLine("Alt-drag to move this box.", 0.6, 0.6, 0.6)
+    GameTooltip:Show()
+  end)
+  box:HookScript("OnLeave", function()
+    GameTooltip:Hide()
+  end)
+
+  -- Alt-drag to move the box; position is saved relative to the vendor window.
+  box:SetMovable(true)
+  box:RegisterForDrag("LeftButton")
+  box:SetScript("OnDragStart", function(self)
+    if IsAltKeyDown() then
+      self:StartMoving()
+    end
+  end)
+  box:SetScript("OnDragStop", function(self)
+    self:StopMovingOrSizing()
+    self:SetUserPlaced(false)
+    local x = self:GetLeft() - MerchantFrame:GetLeft()
+    local y = self:GetTop() - MerchantFrame:GetTop()
+    VendorSearchDB.boxOffset = {x, y}
+    ApplyBoxPosition()
+  end)
+
+  countText = MerchantFrame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+  countText:SetPoint("LEFT", box, "RIGHT", 8, 0)
+
+  emptyText = MerchantFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  emptyText:SetText("No items match your search.")
+  if MerchantItem1 then
+    emptyText:SetPoint("TOPLEFT", MerchantItem1, "TOPLEFT", 8, -12)
+  else
+    emptyText:SetPoint("CENTER", MerchantFrame, "CENTER")
+  end
+  emptyText:Hide()
+
+  hooksecurefunc("MerchantFrame_UpdateMerchantInfo", function()
+    Filter:Apply()
+  end)
+  if MerchantFrame_Update then
+    hooksecurefunc("MerchantFrame_Update", function()
+      Filter:UpdateVisibility()
+    end)
+  end
+end
