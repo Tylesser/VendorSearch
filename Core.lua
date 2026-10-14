@@ -2,6 +2,7 @@ local _, ns = ...
 
 ns.defaults = {
   boxOffset = nil,
+  fade = false,
 }
 
 ns.PREFIX = "|cffffd700Tylesser - Vendor Search|r: "

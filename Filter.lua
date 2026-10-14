@@ -7,8 +7,10 @@ local _, ns = ...
 local Filter = {}
 ns.Filter = Filter
 
-local box, countText, emptyText
+local box, fadeCheck, countText, emptyText
 local originalNameColors = {}
+local FADED_ALPHA = 0.25
+local MAX_PAGES_LISTED = 5
 
 local function PerPage()
   return MERCHANT_ITEMS_PER_PAGE or 10
@@ -151,6 +153,58 @@ local function RestoreNameColors()
   end
 end
 
+-- Fade mode changes slot alpha, which Blizzard never resets itself.
+local function ResetAlpha()
+  for i = 1, PerPage() do
+    local slot = Slot(i)
+    if slot then
+      slot.merchantButton:SetAlpha(1)
+    end
+  end
+end
+
+local function PluralMatches(count)
+  return count == 1 and "1 match" or (count .. " matches")
+end
+
+-- Fade mode: keep the vendor's own pages, fade the items that don't match.
+local function ApplyFade(terms)
+  local perPage = PerPage()
+  local matched, pagesWithMatch, count = {}, {}, 0
+  for _, item in ipairs(ns.ScanMerchant()) do
+    if ns.Matches(item, terms) then
+      matched[item.index] = true
+      count = count + 1
+      local page = math.ceil(item.index / perPage)
+      if pagesWithMatch[#pagesWithMatch] ~= page then
+        table.insert(pagesWithMatch, page)
+      end
+    end
+  end
+
+  for i = 1, perPage do
+    local slot = Slot(i)
+    if slot and slot.itemButton and slot.itemButton:IsShown() then
+      slot.merchantButton:SetAlpha(matched[slot.itemButton:GetID()] and 1 or FADED_ALPHA)
+    end
+  end
+
+  Filter.firstMatchPage = pagesWithMatch[1]
+  local text = PluralMatches(count)
+  if count > 0 and GetMerchantNumItems() > perPage then
+    local listed = {}
+    for n = 1, math.min(#pagesWithMatch, MAX_PAGES_LISTED) do
+      listed[n] = pagesWithMatch[n]
+    end
+    text = text .. " - page " .. table.concat(listed, ", ")
+    if #pagesWithMatch > MAX_PAGES_LISTED then
+      text = text .. "..."
+    end
+  end
+  countText:SetText(text)
+  emptyText:SetShown(count == 0)
+end
+
 local function UpdatePaging(page, pages, total)
   local multiple = total > PerPage()
   if MerchantPageText then
@@ -176,10 +230,16 @@ function Filter:Apply()
   if not (box and MerchantFrame and MerchantFrame:IsShown() and MerchantFrame.selectedTab == 1) then
     return
   end
+  ResetAlpha()
+  Filter.firstMatchPage = nil
   local terms = ns.ParseQuery(box:GetText())
   if #terms == 0 then
     countText:SetText("")
     emptyText:Hide()
+    return
+  end
+  if VendorSearchDB.fade then
+    ApplyFade(terms)
     return
   end
 
@@ -209,7 +269,8 @@ function Filter:Apply()
   end
 
   UpdatePaging(MerchantFrame.page, pages, #results)
-  countText:SetText(#results == 1 and "1 match" or (#results .. " matches"))
+  Filter.firstMatchPage = #results > 0 and 1 or nil
+  countText:SetText(PluralMatches(#results))
   emptyText:SetShown(#results == 0)
 end
 
@@ -224,6 +285,12 @@ function Filter:Refresh(resetPage)
   end
   if MerchantFrame_Update then
     MerchantFrame_Update()
+    -- In fade mode, turn to the first page that has a match.
+    if resetPage and VendorSearchDB.fade and Filter.firstMatchPage
+      and Filter.firstMatchPage ~= MerchantFrame.page then
+      MerchantFrame.page = Filter.firstMatchPage
+      MerchantFrame_Update()
+    end
   end
 end
 
@@ -233,9 +300,11 @@ function Filter:UpdateVisibility()
   end
   local onMerchantTab = MerchantFrame.selectedTab == 1
   box:SetShown(onMerchantTab)
+  fadeCheck:SetShown(onMerchantTab)
   countText:SetShown(onMerchantTab)
   if not onMerchantTab then
     emptyText:Hide()
+    ResetAlpha()
   end
 end
 
@@ -279,6 +348,7 @@ function Filter:Clear()
     box:SetText("")
   end
   RestoreNameColors()
+  ResetAlpha()
   if emptyText then
     emptyText:Hide()
   end
@@ -308,6 +378,10 @@ function Filter:Create()
   end)
   box:SetScript("OnEnterPressed", function(self)
     self:ClearFocus()
+    if Filter.firstMatchPage and Filter.firstMatchPage ~= MerchantFrame.page then
+      MerchantFrame.page = Filter.firstMatchPage
+      MerchantFrame_Update()
+    end
   end)
   box:SetScript("OnEscapePressed", function(self)
     self:ClearFocus()
@@ -341,8 +415,35 @@ function Filter:Create()
     ApplyBoxPosition()
   end)
 
+  fadeCheck = CreateFrame("CheckButton", nil, MerchantFrame, "UICheckButtonTemplate")
+  fadeCheck:SetSize(20, 20)
+  fadeCheck:SetFrameLevel(box:GetFrameLevel())
+  fadeCheck:SetPoint("LEFT", box, "RIGHT", 4, 0)
+  local fadeLabel = fadeCheck.Text or fadeCheck.text
+  if not fadeLabel then
+    fadeLabel = fadeCheck:CreateFontString(nil, "OVERLAY")
+    fadeLabel:SetPoint("LEFT", fadeCheck, "RIGHT", 1, 0)
+  end
+  fadeLabel:SetFontObject("GameFontHighlightSmall")
+  fadeLabel:SetText("Fade")
+  fadeCheck:SetChecked(VendorSearchDB.fade)
+  fadeCheck:SetScript("OnClick", function(self)
+    VendorSearchDB.fade = self:GetChecked() and true or false
+    Filter:Refresh(true)
+  end)
+  fadeCheck:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+    GameTooltip:SetText("Fade instead of hide", 1, 0.82, 0)
+    GameTooltip:AddLine("Keep the vendor's normal pages and fade the items", 1, 1, 1)
+    GameTooltip:AddLine("that don't match. Enter turns to the first page with a match.", 1, 1, 1)
+    GameTooltip:Show()
+  end)
+  fadeCheck:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+  end)
+
   countText = MerchantFrame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-  countText:SetPoint("LEFT", box, "RIGHT", 8, 0)
+  countText:SetPoint("LEFT", fadeLabel, "RIGHT", 6, 0)
 
   emptyText = MerchantFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   emptyText:SetText("No items match your search.")

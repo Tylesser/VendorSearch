@@ -10,6 +10,7 @@ A World of Warcraft addon that adds a **search box to the vendor window**. Type 
 - **Filters the vendor's own item grid**, across all pages. The page count updates to the matching items ("Page 1 of 2").
 - Matching items work exactly like normal: **right-click to buy**, tooltips, Shift-click to link, Ctrl-click to preview, drag to your bags. Items that cost tokens or currency still show Blizzard's confirmation.
 - Shows how many items match, or "No items match your search."
+- **Fade** option: instead of hiding items, keep the vendor's normal pages and fade the ones that don't match. The match count lists the pages with matches, and the vendor turns to the first one (or press Enter).
 - With an empty search box the vendor window looks and behaves exactly as without the addon.
 - The search is cleared when you close the vendor. The box hides on the Buyback tab.
 - **Alt-drag** the search box to move it; the position is saved.
