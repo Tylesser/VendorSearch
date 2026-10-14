@@ -1,0 +1,13 @@
+## Interface: 16001, 11508, 11509, 20506, 38000, 50504, 120100, 120105
+## Title: Tylesser - Vendor Search
+## Notes: Search the vendor you are talking to by item name, type or slot, see all items in one list, and jump to or buy them.
+## Author: Tylesser
+## Version: @project-version@
+## SavedVariables: VendorSearchDB
+## IconTexture: Interface\AddOns\VendorSearch\Media\Icon
+## X-License: MIT
+## X-Website: https://github.com/Tylesser/VendorSearch
+
+Core.lua
+UI.lua
+Events.lua
