@@ -3,7 +3,6 @@
 ## Notes: Adds a search box to the vendor window that filters its items by name, type or equipment slot.
 ## Author: Tylesser
 ## Version: @project-version@
-## OptionalDeps: Auctionator
 ## SavedVariables: VendorSearchDB
 ## IconTexture: Interface\AddOns\VendorSearch\Media\Icon
 ## X-License: MIT

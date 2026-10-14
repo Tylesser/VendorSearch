@@ -9,9 +9,8 @@ A World of Warcraft addon that adds a **search box to the vendor window**. Type 
 - **Search box on the vendor window.** Each word you type must match the item's **name**, **type**, **subtype** or **equipment slot**: `vial`, `recipe cooking`, `head`, `thread`...
 - **Filters the vendor's own item grid**, across all pages. The page count updates to the matching items ("Page 1 of 2").
 - Matching items work exactly like normal: **right-click to buy**, tooltips, Shift-click to link, Ctrl-click to preview, drag to your bags. Items that cost tokens or currency still show Blizzard's confirmation.
-- Shows how many items match on the vendor's page line, or "No items match your search."
+- Shows how many items match, or "No items match your search."
 - **Fade** option: instead of hiding items, keep the vendor's normal pages and fade the ones that don't match. The match count lists the pages with matches, and the vendor turns to the first one (or press Enter).
-- **Flip finder** (with Auctionator): vendor items that sell for at least 10% and 1 silver more on the auction house (after the 5% cut) get a green border and a "+profit" label, and a tooltip line. Tick **Flips** to show only those.
 - With an empty search box the vendor window looks and behaves exactly as without the addon.
 - The search is cleared when you close the vendor. The box hides on the Buyback tab.
 - **Alt-drag** the search box to move it; the position is saved.
