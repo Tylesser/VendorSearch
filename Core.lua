@@ -3,7 +3,32 @@ local _, ns = ...
 ns.defaults = {
   boxOffset = nil,
   fade = false,
+  flipsOnly = false,
 }
+
+-- A vendor item is a flip when its Auctionator price, after the 5% AH cut,
+-- beats the vendor price by at least 1 silver and 10%.
+local AH_CUT = 0.95
+local MIN_FLIP_PROFIT = 100
+local MIN_FLIP_RATIO = 0.1
+
+function ns.HasAuctionator()
+  return Auctionator ~= nil and Auctionator.API ~= nil and Auctionator.API.v1 ~= nil
+end
+
+-- Auctionator's public API, called defensively (it is an optional dependency).
+function ns.CallAuctionator(fnName, ...)
+  local api = ns.HasAuctionator() and Auctionator.API.v1
+  local fn = api and api[fnName]
+  if not fn then
+    return nil
+  end
+  local ok, result = pcall(fn, "VendorSearch", ...)
+  if ok then
+    return result
+  end
+  return nil
+end
 
 ns.PREFIX = "|cffffd700Tylesser - Vendor Search|r: "
 
@@ -50,6 +75,14 @@ function ns.ScanMerchant()
         item.itemSubType = itemSubType
         if equipLoc and equipLoc ~= "" then
           item.equipSlot = _G[equipLoc]
+        end
+      end
+      if link and not item.hasExtendedCost and item.price > 0 then
+        local unitAH = ns.CallAuctionator("GetAuctionPriceByItemLink", link)
+        if unitAH then
+          item.unitAH = unitAH
+          item.flipProfit = math.floor(unitAH * item.stackCount * AH_CUT) - item.price
+          item.isFlip = item.flipProfit >= math.max(MIN_FLIP_PROFIT, item.price * MIN_FLIP_RATIO)
         end
       end
       item.searchText = table.concat({

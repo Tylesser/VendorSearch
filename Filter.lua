@@ -7,7 +7,7 @@ local _, ns = ...
 local Filter = {}
 ns.Filter = Filter
 
-local box, fadeCheck, countText, emptyText
+local box, fadeCheck, flipCheck, countText, emptyText
 local originalNameColors = {}
 local FADED_ALPHA = 0.25
 local MAX_PAGES_LISTED = 5
@@ -167,12 +167,42 @@ local function PluralMatches(count)
   return count == 1 and "1 match" or (count .. " matches")
 end
 
+local function Wanted(item, terms)
+  return ns.Matches(item, terms) and (not Filter.flipsOnly or item.isFlip)
+end
+
+-- The match count goes on the vendor's own page line under the grid.
+local function SetStatus(text)
+  if MerchantPageText then
+    MerchantPageText:SetText(text)
+    MerchantPageText:Show()
+  elseif countText then
+    countText:SetText(text)
+  end
+end
+
+local function PageList(pages)
+  local listed = {}
+  for n = 1, math.min(#pages, MAX_PAGES_LISTED) do
+    listed[n] = pages[n]
+  end
+  local text = table.concat(listed, ", ")
+  if #pages > MAX_PAGES_LISTED then
+    text = text .. "..."
+  end
+  return text
+end
+
+local function PageNumber(page, pages)
+  return (MERCHANT_PAGE_NUMBER or "Page %s of %s"):format(page, pages)
+end
+
 -- Fade mode: keep the vendor's own pages, fade the items that don't match.
-local function ApplyFade(terms)
+local function ApplyFade(items, terms)
   local perPage = PerPage()
   local matched, pagesWithMatch, count = {}, {}, 0
-  for _, item in ipairs(ns.ScanMerchant()) do
-    if ns.Matches(item, terms) then
+  for _, item in ipairs(items) do
+    if Wanted(item, terms) then
       matched[item.index] = true
       count = count + 1
       local page = math.ceil(item.index / perPage)
@@ -191,26 +221,24 @@ local function ApplyFade(terms)
 
   Filter.firstMatchPage = pagesWithMatch[1]
   local text = PluralMatches(count)
-  if count > 0 and GetMerchantNumItems() > perPage then
-    local listed = {}
-    for n = 1, math.min(#pagesWithMatch, MAX_PAGES_LISTED) do
-      listed[n] = pagesWithMatch[n]
+  local vendorPages = math.ceil(#items / perPage)
+  if vendorPages > 1 then
+    if count > 0 then
+      text = text .. " on page " .. PageList(pagesWithMatch)
     end
-    text = text .. " - page " .. table.concat(listed, ", ")
-    if #pagesWithMatch > MAX_PAGES_LISTED then
-      text = text .. "..."
-    end
+    text = PageNumber(MerchantFrame.page, vendorPages) .. " - " .. text
   end
-  countText:SetText(text)
+  SetStatus(text)
   emptyText:SetShown(count == 0)
 end
 
 local function UpdatePaging(page, pages, total)
-  local multiple = total > PerPage()
-  if MerchantPageText then
-    MerchantPageText:SetFormattedText(MERCHANT_PAGE_NUMBER or "Page %s of %s", page, pages)
-    MerchantPageText:SetShown(multiple)
+  local multiple = pages > 1
+  local text = PluralMatches(total)
+  if multiple then
+    text = text .. " - " .. PageNumber(page, pages)
   end
+  SetStatus(text)
   if MerchantPrevPageButton then
     MerchantPrevPageButton:SetShown(multiple)
     MerchantPrevPageButton:SetEnabled(page > 1)
@@ -221,31 +249,11 @@ local function UpdatePaging(page, pages, total)
   end
 end
 
-function Filter:IsActive()
-  return box ~= nil and #ns.ParseQuery(box:GetText()) > 0
-end
-
--- Called after Blizzard has filled the current merchant page.
-function Filter:Apply()
-  if not (box and MerchantFrame and MerchantFrame:IsShown() and MerchantFrame.selectedTab == 1) then
-    return
-  end
-  ResetAlpha()
-  Filter.firstMatchPage = nil
-  local terms = ns.ParseQuery(box:GetText())
-  if #terms == 0 then
-    countText:SetText("")
-    emptyText:Hide()
-    return
-  end
-  if VendorSearchDB.fade then
-    ApplyFade(terms)
-    return
-  end
-
+-- Hide mode: refill the grid with only the matching items.
+local function ApplyHide(items, terms)
   local results = {}
-  for _, item in ipairs(ns.ScanMerchant()) do
-    if ns.Matches(item, terms) then
+  for _, item in ipairs(items) do
+    if Wanted(item, terms) then
       table.insert(results, item)
     end
   end
@@ -270,8 +278,103 @@ function Filter:Apply()
 
   UpdatePaging(MerchantFrame.page, pages, #results)
   Filter.firstMatchPage = #results > 0 and 1 or nil
-  countText:SetText(PluralMatches(#results))
   emptyText:SetShown(#results == 0)
+end
+
+--------------------------------------------------------------------------------
+-- Flips: vendor items that sell for clearly more on the auction house
+--------------------------------------------------------------------------------
+local flipMarks = {}
+local lastItems = {}
+
+local function ShortMoney(copper)
+  if copper >= 10000 then
+    return math.floor(copper / 10000) .. "g"
+  elseif copper >= 100 then
+    return math.floor(copper / 100) .. "s"
+  end
+  return copper .. "c"
+end
+
+local function FlipMark(i, slot)
+  local mark = flipMarks[i]
+  if not mark then
+    mark = {}
+    local width = slot.itemButton:GetWidth()
+    if not width or width == 0 then
+      width = 37
+    end
+    mark.border = slot.itemButton:CreateTexture(nil, "OVERLAY")
+    mark.border:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+    mark.border:SetBlendMode("ADD")
+    mark.border:SetVertexColor(0.2, 1, 0.35)
+    mark.border:SetSize(width * 1.8, width * 1.8)
+    mark.border:SetPoint("CENTER", slot.itemButton, "CENTER")
+    mark.text = slot.merchantButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    mark.text:SetPoint("BOTTOMRIGHT", slot.merchantButton, "BOTTOMRIGHT", -2, 3)
+    mark.text:SetTextColor(0.25, 1, 0.4)
+    flipMarks[i] = mark
+  end
+  return mark
+end
+
+local function HideFlipMarks()
+  for _, mark in pairs(flipMarks) do
+    mark.border:Hide()
+    mark.text:Hide()
+  end
+end
+
+local function UpdateFlipMarks(items)
+  wipe(lastItems)
+  for _, item in ipairs(items) do
+    lastItems[item.index] = item
+  end
+  for i = 1, PerPage() do
+    local slot = Slot(i)
+    if slot and slot.itemButton then
+      local item = slot.itemButton:IsShown() and lastItems[slot.itemButton:GetID()]
+      if item and item.isFlip then
+        local mark = FlipMark(i, slot)
+        mark.text:SetText("+" .. ShortMoney(item.flipProfit))
+        mark.border:Show()
+        mark.text:Show()
+      elseif flipMarks[i] then
+        flipMarks[i].border:Hide()
+        flipMarks[i].text:Hide()
+      end
+    end
+  end
+end
+
+function Filter:IsActive()
+  return box ~= nil and MerchantFrame:IsShown()
+end
+
+-- Called after Blizzard has filled the current merchant page.
+function Filter:Apply()
+  if not (box and MerchantFrame and MerchantFrame:IsShown() and MerchantFrame.selectedTab == 1) then
+    return
+  end
+  ResetAlpha()
+  Filter.firstMatchPage = nil
+  Filter.flipsOnly = VendorSearchDB.flipsOnly and ns.HasAuctionator()
+
+  local items = ns.ScanMerchant()
+  local terms = ns.ParseQuery(box:GetText())
+  if #terms > 0 or Filter.flipsOnly then
+    if VendorSearchDB.fade then
+      ApplyFade(items, terms)
+    else
+      ApplyHide(items, terms)
+    end
+  else
+    if countText then
+      countText:SetText("")
+    end
+    emptyText:Hide()
+  end
+  UpdateFlipMarks(items)
 end
 
 -- Re-run Blizzard's update (our hook then filters it) from the first page.
@@ -301,10 +404,16 @@ function Filter:UpdateVisibility()
   local onMerchantTab = MerchantFrame.selectedTab == 1
   box:SetShown(onMerchantTab)
   fadeCheck:SetShown(onMerchantTab)
-  countText:SetShown(onMerchantTab)
+  if flipCheck then
+    flipCheck:SetShown(onMerchantTab)
+  end
+  if countText then
+    countText:SetShown(onMerchantTab)
+  end
   if not onMerchantTab then
     emptyText:Hide()
     ResetAlpha()
+    HideFlipMarks()
   end
 end
 
@@ -349,6 +458,7 @@ function Filter:Clear()
   end
   RestoreNameColors()
   ResetAlpha()
+  HideFlipMarks()
   if emptyText then
     emptyText:Hide()
   end
@@ -365,7 +475,7 @@ function Filter:Create()
   else
     box = CreateFrame("EditBox", "VendorSearchBox", MerchantFrame, "InputBoxTemplate")
   end
-  box:SetSize(140, 20)
+  box:SetSize(120, 20)
   box:SetAutoFocus(false)
   box:SetFrameLevel(MerchantFrame:GetFrameLevel() + 10)
   if box.Instructions then
@@ -415,35 +525,51 @@ function Filter:Create()
     ApplyBoxPosition()
   end)
 
-  fadeCheck = CreateFrame("CheckButton", nil, MerchantFrame, "UICheckButtonTemplate")
-  fadeCheck:SetSize(20, 20)
-  fadeCheck:SetFrameLevel(box:GetFrameLevel())
-  fadeCheck:SetPoint("LEFT", box, "RIGHT", 4, 0)
-  local fadeLabel = fadeCheck.Text or fadeCheck.text
-  if not fadeLabel then
-    fadeLabel = fadeCheck:CreateFontString(nil, "OVERLAY")
-    fadeLabel:SetPoint("LEFT", fadeCheck, "RIGHT", 1, 0)
+  local function CreateToggle(label, dbKey, anchor, title, line1, line2)
+    local check = CreateFrame("CheckButton", nil, MerchantFrame, "UICheckButtonTemplate")
+    check:SetSize(20, 20)
+    check:SetFrameLevel(box:GetFrameLevel())
+    check:SetPoint("LEFT", anchor, "RIGHT", 4, 0)
+    local text = check.Text or check.text
+    if not text then
+      text = check:CreateFontString(nil, "OVERLAY")
+      text:SetPoint("LEFT", check, "RIGHT", 1, 0)
+    end
+    text:SetFontObject("GameFontHighlightSmall")
+    text:SetText(label)
+    check.label = text
+    check:SetChecked(VendorSearchDB[dbKey])
+    check:SetScript("OnClick", function(self)
+      VendorSearchDB[dbKey] = self:GetChecked() and true or false
+      Filter:Refresh(true)
+    end)
+    check:SetScript("OnEnter", function(self)
+      GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+      GameTooltip:SetText(title, 1, 0.82, 0)
+      GameTooltip:AddLine(line1, 1, 1, 1)
+      GameTooltip:AddLine(line2, 1, 1, 1)
+      GameTooltip:Show()
+    end)
+    check:SetScript("OnLeave", function()
+      GameTooltip:Hide()
+    end)
+    return check
   end
-  fadeLabel:SetFontObject("GameFontHighlightSmall")
-  fadeLabel:SetText("Fade")
-  fadeCheck:SetChecked(VendorSearchDB.fade)
-  fadeCheck:SetScript("OnClick", function(self)
-    VendorSearchDB.fade = self:GetChecked() and true or false
-    Filter:Refresh(true)
-  end)
-  fadeCheck:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-    GameTooltip:SetText("Fade instead of hide", 1, 0.82, 0)
-    GameTooltip:AddLine("Keep the vendor's normal pages and fade the items", 1, 1, 1)
-    GameTooltip:AddLine("that don't match. Enter turns to the first page with a match.", 1, 1, 1)
-    GameTooltip:Show()
-  end)
-  fadeCheck:SetScript("OnLeave", function()
-    GameTooltip:Hide()
-  end)
 
-  countText = MerchantFrame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-  countText:SetPoint("LEFT", fadeLabel, "RIGHT", 6, 0)
+  fadeCheck = CreateToggle("Fade", "fade", box, "Fade instead of hide",
+    "Keep the vendor's normal pages and fade the items",
+    "that don't match. Enter turns to the first page with a match.")
+
+  if ns.HasAuctionator() then
+    flipCheck = CreateToggle("Flips", "flipsOnly", fadeCheck.label, "Flips only",
+      "Only items that sell for at least 10% and 1 silver more on the",
+      "auction house (after the 5% cut). Uses Auctionator prices.")
+  end
+
+  if not MerchantPageText then
+    countText = MerchantFrame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    countText:SetPoint("LEFT", (flipCheck or fadeCheck).label, "RIGHT", 6, 0)
+  end
 
   emptyText = MerchantFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   emptyText:SetText("No items match your search.")
@@ -453,6 +579,21 @@ function Filter:Create()
     emptyText:SetPoint("CENTER", MerchantFrame, "CENTER")
   end
   emptyText:Hide()
+
+  -- Flip details in the vendor item tooltip
+  if GameTooltip.SetMerchantItem then
+    hooksecurefunc(GameTooltip, "SetMerchantItem", function(tooltip, index)
+      local item = lastItems[index]
+      if item and item.isFlip then
+        local profit = GetCoinTextureString and GetCoinTextureString(item.flipProfit) or ShortMoney(item.flipProfit)
+        tooltip:AddLine("Vendor Search: flip, +" .. profit .. " on the AH after the 5% cut", 0.25, 1, 0.4)
+        tooltip:Show()
+      end
+    end)
+  end
+  ns.CallAuctionator("RegisterForDBUpdate", function()
+    Filter:Apply()
+  end)
 
   hooksecurefunc("MerchantFrame_UpdateMerchantInfo", function()
     Filter:Apply()
