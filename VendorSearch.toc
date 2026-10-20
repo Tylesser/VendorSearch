@@ -6,6 +6,7 @@
 ## SavedVariables: VendorSearchDB
 ## IconTexture: Interface\AddOns\VendorSearch\Media\Icon
 ## X-License: MIT
+## X-Curse-Project-ID: 1756302
 ## X-Website: https://github.com/Tylesser/VendorSearch
 
 Core.lua
