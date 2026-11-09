@@ -4,6 +4,9 @@ Shared conventions, release steps and the game client are in the workspace file 
 
 ## Files (load order from VendorSearch.toc)
 
+- `Tylesser.lua`: the shared Tylesser "Runestone" look (`ns.T`: stone panels, gold borders, studs, Cinzel, buttons,
+  check boxes, options page header, chat prefix). Loaded first. The same file is in every Tylesser addon: edit them together
+  (see the workspace CLAUDE.md).
 - `Core.lua`: SavedVariables `VendorSearchDB` defaults (`boxOffset`, `fade`) and the search matching: each typed word
   must match the item's name, type, subtype or equipment slot.
 - `Filter.lua`: filters the **vendor window's own item grid**. After Blizzard fills a page

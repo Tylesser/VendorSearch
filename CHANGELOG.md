@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.0
+
+- New Tylesser look for the search box, the Fade check box and chat messages, shared by all Tylesser addons.
+
 ## 1.0.0
 
 - First release.

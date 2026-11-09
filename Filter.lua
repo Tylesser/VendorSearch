@@ -368,6 +368,7 @@ function Filter:Create()
   box:SetSize(140, 20)
   box:SetAutoFocus(false)
   box:SetFrameLevel(MerchantFrame:GetFrameLevel() + 10)
+  ns.T.EditBox(box)
   if box.Instructions then
     box.Instructions:SetText("Search items")
   end
@@ -415,17 +416,11 @@ function Filter:Create()
     ApplyBoxPosition()
   end)
 
-  fadeCheck = CreateFrame("CheckButton", nil, MerchantFrame, "UICheckButtonTemplate")
-  fadeCheck:SetSize(20, 20)
+  fadeCheck = ns.T.Check(MerchantFrame, "Fade", "GameFontHighlightSmall")
   fadeCheck:SetFrameLevel(box:GetFrameLevel())
-  fadeCheck:SetPoint("LEFT", box, "RIGHT", 4, 0)
-  local fadeLabel = fadeCheck.Text or fadeCheck.text
-  if not fadeLabel then
-    fadeLabel = fadeCheck:CreateFontString(nil, "OVERLAY")
-    fadeLabel:SetPoint("LEFT", fadeCheck, "RIGHT", 1, 0)
-  end
-  fadeLabel:SetFontObject("GameFontHighlightSmall")
-  fadeLabel:SetText("Fade")
+  fadeCheck:SetPoint("LEFT", box, "RIGHT", 6, 0)
+  fadeCheck:SetHitRectInsets(0, -30, 0, 0)
+  local fadeLabel = fadeCheck.label
   fadeCheck:SetChecked(VendorSearchDB.fade)
   fadeCheck:SetScript("OnClick", function(self)
     VendorSearchDB.fade = self:GetChecked() and true or false

@@ -9,6 +9,7 @@
 ## X-Curse-Project-ID: 1756302
 ## X-Website: https://github.com/Tylesser/VendorSearch
 
+Tylesser.lua
 Core.lua
 Filter.lua
 Events.lua

@@ -5,7 +5,7 @@ ns.defaults = {
   fade = false,
 }
 
-ns.PREFIX = "|cffffd700Tylesser - Vendor Search|r: "
+ns.PREFIX = ns.T.Prefix("Vendor Search")
 
 local GetItemInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
 
