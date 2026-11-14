@@ -51,6 +51,10 @@ SlashCmdList.VENDORSEARCH = function(msg)
     print(ns.PREFIX .. "search box moved back to its default place.")
     return
   end
+  if msg == "feedback" then
+    ns.T.ShowFeedback()
+    return
+  end
   if not (MerchantFrame and MerchantFrame:IsShown()) then
     print(ns.PREFIX .. "talk to a vendor to search their items.")
     return

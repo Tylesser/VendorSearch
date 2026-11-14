@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.0
+
+- A `/vsearch feedback` command: it shows the link to tylesser.com/feedback, where you can report a bug or suggest an idea.
+
 ## 1.1.0
 
 - New Tylesser look for the search box, the Fade check box and chat messages, shared by all Tylesser addons.

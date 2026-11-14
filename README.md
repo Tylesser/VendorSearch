@@ -21,6 +21,11 @@ Talk to any vendor and type in the search box at the top of the vendor window.
 
 - `/vsearch`: put the cursor in the search box
 - `/vsearch reset`: move the search box back to its default place
+- `/vsearch feedback`: get the link to report a bug or suggest an idea
+
+## Feedback
+
+Found a bug or have an idea? Type `/vsearch feedback` in game to get the link, or go straight to [tylesser.com/feedback](https://tylesser.com/feedback/#vendorsearch).
 
 ## Installation
 
