@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1
+
+- The feedback window (`/vsearch feedback`) also points to tylesser.com for the other Tylesser addons.
+
 ## 1.2.0
 
 - A `/vsearch feedback` command: it shows the link to tylesser.com/feedback, where you can report a bug or suggest an idea.
