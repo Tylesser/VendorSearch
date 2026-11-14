@@ -7,6 +7,7 @@
 ## IconTexture: Interface\AddOns\VendorSearch\Media\Icon
 ## X-License: MIT
 ## X-Curse-Project-ID: 1756302
+## X-Wago-ID: BKpEOZGE
 ## X-Website: https://github.com/Tylesser/VendorSearch
 
 Tylesser.lua
