@@ -22,5 +22,5 @@ Shared conventions, release steps and the game client are in the workspace file 
 - No separate panel: the user rejected one. All UI stays on `MerchantFrame`.
 - With an empty search box, the vendor window must look and behave exactly as it does without the addon.
 - No Auctionator code here. The flip finder (AH profit at vendors) lives in ProfitSort `Vendor.lua`.
-- Screenshots in `branding/` (`Tylesser - Vendor Search 1.png`, `2.png`) appear on tylesser.com with the alt text from
-  the site's `site.json`. Update both if the screenshots change.
+- tylesser.com and CurseForge show the illustration `branding/vendorsearch-card.png` (alt text in the site's
+  `site.json`). The in-game screenshots `Tylesser - Vendor Search 1.png` and `2.png` are no longer on the site.
