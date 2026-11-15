@@ -8,7 +8,9 @@ local Filter = {}
 ns.Filter = Filter
 
 local box, fadeCheck, countText, emptyText
+local unknownCheck, usableCheck, bagsCheck
 local originalNameColors = {}
+local slotMarks = {}
 local FADED_ALPHA = 0.25
 local MAX_PAGES_LISTED = 5
 
@@ -167,12 +169,20 @@ local function PluralMatches(count)
   return count == 1 and "1 match" or (count .. " matches")
 end
 
+-- Session-only toggles (reset when the vendor closes).
+Filter.unknownOnly = false
+Filter.usableOnly = false
+
+function Filter:Criteria()
+  return ns.MakeCriteria(box and box:GetText() or "", Filter.unknownOnly, Filter.usableOnly)
+end
+
 -- Fade mode: keep the vendor's own pages, fade the items that don't match.
-local function ApplyFade(terms)
+local function ApplyFade(criteria)
   local perPage = PerPage()
   local matched, pagesWithMatch, count = {}, {}, 0
   for _, item in ipairs(ns.ScanMerchant()) do
-    if ns.Matches(item, terms) then
+    if ns.ItemPasses(item, criteria) then
       matched[item.index] = true
       count = count + 1
       local page = math.ceil(item.index / perPage)
@@ -221,31 +231,88 @@ local function UpdatePaging(page, pages, total)
   end
 end
 
-function Filter:IsActive()
-  return box ~= nil and #ns.ParseQuery(box:GetText()) > 0
+--------------------------------------------------------------------------------
+-- Slot marks: bag count "(3)" and "Known" on learned recipes
+--------------------------------------------------------------------------------
+-- Our own font strings on each item button. They are refreshed from the button's current ID
+-- after every update, so a slot reused for another item never keeps an old mark.
+local function Marks(i, slot)
+  local marks = slotMarks[i]
+  if not marks then
+    local itemButton = slot.itemButton
+    local bags = itemButton:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+    bags:SetDrawLayer("OVERLAY", 7)
+    bags:SetPoint("TOPRIGHT", itemButton, "TOPRIGHT", 0, -2)
+    bags:SetJustifyH("RIGHT")
+    bags:SetTextColor(0.55, 0.8, 1)
+    bags:Hide()
+    local known = itemButton:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+    known:SetDrawLayer("OVERLAY", 7)
+    known:SetPoint("BOTTOMLEFT", itemButton, "BOTTOMLEFT", 2, 2)
+    known:SetText("Known")
+    known:SetTextColor(0.3, 1, 0.3)
+    known:Hide()
+    marks = { bags = bags, known = known }
+    slotMarks[i] = marks
+  end
+  return marks
 end
 
--- Called after Blizzard has filled the current merchant page.
-function Filter:Apply()
+local function HideMarks()
+  for _, marks in pairs(slotMarks) do
+    marks.bags:SetText("")
+    marks.bags:Hide()
+    marks.known:Hide()
+  end
+end
+
+function Filter:UpdateMarks()
   if not (box and MerchantFrame and MerchantFrame:IsShown() and MerchantFrame.selectedTab == 1) then
+    HideMarks()
     return
   end
+  for i = 1, PerPage() do
+    local slot = Slot(i)
+    if slot and slot.itemButton then
+      local marks = Marks(i, slot)
+      local bagText, known
+      if slot.itemButton:IsShown() then
+        local index = slot.itemButton:GetID()
+        local link = index and index > 0 and GetMerchantItemLink(index)
+        if link then
+          bagText = ns.BagCountText(ns.GetBagCount(link), VendorSearchDB.bagCount)
+          known = ns.IsKnownRecipe(index, link)
+        end
+      end
+      marks.bags:SetText(bagText or "")
+      marks.bags:SetShown(bagText ~= nil)
+      marks.known:SetShown(known and true or false)
+    end
+  end
+end
+
+function Filter:IsActive()
+  return box ~= nil and ns.IsFiltering(Filter:Criteria())
+end
+
+-- Filters the page Blizzard has just filled (only when a search or toggle is on).
+local function ApplyFilter()
   ResetAlpha()
   Filter.firstMatchPage = nil
-  local terms = ns.ParseQuery(box:GetText())
-  if #terms == 0 then
+  local criteria = Filter:Criteria()
+  if not ns.IsFiltering(criteria) then
     countText:SetText("")
     emptyText:Hide()
     return
   end
   if VendorSearchDB.fade then
-    ApplyFade(terms)
+    ApplyFade(criteria)
     return
   end
 
   local results = {}
   for _, item in ipairs(ns.ScanMerchant()) do
-    if ns.Matches(item, terms) then
+    if ns.ItemPasses(item, criteria) then
       table.insert(results, item)
     end
   end
@@ -272,6 +339,15 @@ function Filter:Apply()
   Filter.firstMatchPage = #results > 0 and 1 or nil
   countText:SetText(PluralMatches(#results))
   emptyText:SetShown(#results == 0)
+end
+
+-- Called after Blizzard has filled the current merchant page.
+function Filter:Apply()
+  if not (box and MerchantFrame and MerchantFrame:IsShown() and MerchantFrame.selectedTab == 1) then
+    return
+  end
+  ApplyFilter()
+  Filter:UpdateMarks()
 end
 
 -- Re-run Blizzard's update (our hook then filters it) from the first page.
@@ -301,10 +377,14 @@ function Filter:UpdateVisibility()
   local onMerchantTab = MerchantFrame.selectedTab == 1
   box:SetShown(onMerchantTab)
   fadeCheck:SetShown(onMerchantTab)
+  unknownCheck:SetShown(onMerchantTab)
+  usableCheck:SetShown(onMerchantTab)
+  bagsCheck:SetShown(onMerchantTab)
   countText:SetShown(onMerchantTab)
   if not onMerchantTab then
     emptyText:Hide()
     ResetAlpha()
+    HideMarks()
   end
 end
 
@@ -343,15 +423,49 @@ function Filter:Focus()
   end
 end
 
+-- On vendor close: empty the search and turn the session toggles off.
 function Filter:Clear()
+  Filter.unknownOnly, Filter.usableOnly = false, false
+  if unknownCheck then
+    unknownCheck:SetChecked(false)
+    usableCheck:SetChecked(false)
+  end
   if box and box:GetText() ~= "" then
     box:SetText("")
   end
   RestoreNameColors()
   ResetAlpha()
+  HideMarks()
+  ns.ClearKnownCache()
   if emptyText then
     emptyText:Hide()
   end
+end
+
+-- A small check box for the row under the search box.
+local function SmallCheck(label, title, lines, onClick)
+  local check = ns.T.Check(MerchantFrame, label, "GameFontHighlightSmall")
+  check:SetSize(16, 16)
+  local tick = check:GetCheckedTexture()
+  if tick then
+    tick:SetSize(18, 18)
+  end
+  check:SetFrameLevel(box:GetFrameLevel())
+  local width = check.label:GetStringWidth()
+  check:SetHitRectInsets(0, -((width and width > 0) and math.ceil(width) + 4 or 40), 0, 0)
+  check:SetScript("OnClick", onClick)
+  check:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+    GameTooltip:SetText(title, 1, 0.82, 0)
+    for _, line in ipairs(lines) do
+      GameTooltip:AddLine(line, 1, 1, 1)
+    end
+    GameTooltip:Show()
+  end)
+  check:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+  end)
+  return check
 end
 
 function Filter:Create()
@@ -439,6 +553,32 @@ function Filter:Create()
 
   countText = MerchantFrame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
   countText:SetPoint("LEFT", fadeLabel, "RIGHT", 6, 0)
+
+  -- Second row, under the search box (moves with it).
+  unknownCheck = SmallCheck("Unknown recipes", "Unknown recipes only",
+    { "Show only recipes you haven't learned yet.", "Resets when you close the vendor." },
+    function(self)
+      Filter.unknownOnly = self:GetChecked() and true or false
+      Filter:Refresh(true)
+    end)
+  unknownCheck:SetPoint("TOPLEFT", box, "BOTTOMLEFT", -6, -1)
+
+  usableCheck = SmallCheck("Usable", "Usable items only",
+    { "Show only items your character can use.", "Resets when you close the vendor." },
+    function(self)
+      Filter.usableOnly = self:GetChecked() and true or false
+      Filter:Refresh(true)
+    end)
+  usableCheck:SetPoint("LEFT", unknownCheck.label, "RIGHT", 8, 0)
+
+  bagsCheck = SmallCheck("In bags", "Count in bags",
+    { "Show on each item how many you already have", "in your bags and bank, e.g. (3)." },
+    function(self)
+      VendorSearchDB.bagCount = self:GetChecked() and true or false
+      Filter:UpdateMarks()
+    end)
+  bagsCheck:SetPoint("LEFT", usableCheck.label, "RIGHT", 8, 0)
+  bagsCheck:SetChecked(VendorSearchDB.bagCount)
 
   emptyText = MerchantFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   emptyText:SetText("No items match your search.")

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.0
+
+- **Unknown recipes** check box under the search box: shows only recipes you haven't learned. Recipes you already know get a small "Known" mark.
+- **Usable** check box: shows only items your character can use.
+- Both combine with the search words, work in Fade mode too, and reset when you close the vendor.
+- **In bags**: each vendor item shows how many you already have (bags and bank), as a backpack icon and a number. On by default; untick it to hide.
+- Entry in the addon menu by the minimap (Retail and WoW Forever) and a `/vsearch help` command.
+
 ## 1.2.1
 
 - The feedback window (`/vsearch feedback`) also points to tylesser.com for the other Tylesser addons.
