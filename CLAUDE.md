@@ -29,6 +29,9 @@ Shared conventions, release steps and the game client are in the workspace file 
   `LEARNED_SPELL_IN_TAB`: clear the known cache and refresh counts), the addon compartment entry (`ns.T.AddCompartment`,
   prints `ns.PrintHelp`), and slash commands `/vsearch` and `/vendorsearch` (`reset`, `feedback`, `help`).
 
+**Twin in Codex:** `Addons/Codex/Modules/VendorSearch` is this addon ported into Codex (2026-11-19): the same
+Core and Filter code on `ns.vendorsearch`, with Codex's settings and widgets. A fix here goes there too (and back).
+
 ## Rules
 
 - No separate panel: the user rejected one. All UI stays on `MerchantFrame`.
