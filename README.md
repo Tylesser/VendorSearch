@@ -28,6 +28,8 @@ Talk to any vendor and type in the search box at the top of the vendor window.
 - `/vsearch feedback`: get the link to report a bug or suggest an idea
 - `/vsearch help`: list these commands (also in the addon menu by the minimap, on clients that have it)
 
+Languages: English, German, French, Spanish (Spain and Mexico), Russian and Brazilian Portuguese, following your game client.
+
 ## Feedback
 
 Found a bug or have an idea? Type `/vsearch feedback` in game to get the link, or go straight to [tylesser.com/feedback](https://tylesser.com/feedback/#vendorsearch).

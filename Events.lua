@@ -1,4 +1,5 @@
 local addonName, ns = ...
+local L = ns.L
 
 local eventFrame = CreateFrame("Frame")
 
@@ -30,11 +31,11 @@ local function InventoryChanged()
 end
 
 function ns.PrintHelp()
-  print(ns.PREFIX .. "search box on the vendor window. Commands:")
-  print("  /vsearch: put the cursor in the search box")
-  print("  /vsearch reset: move the search box back to its default place")
-  print("  /vsearch feedback: get the link to report a bug or suggest an idea")
-  print("  Found a bug or have an idea? Type /vsearch feedback.")
+  print(ns.PREFIX .. L["search box on the vendor window. Commands:"])
+  print("  /vsearch: " .. L["put the cursor in the search box"])
+  print("  /vsearch reset: " .. L["move the search box back to its default place"])
+  print("  /vsearch feedback: " .. L["get the link to report a bug or suggest an idea"])
+  print("  " .. L["Found a bug or have an idea? Type %s."]:format("/vsearch feedback"))
 end
 
 local handlers = {
@@ -52,7 +53,7 @@ local handlers = {
     ns.T.AddCompartment({ -- Retail and WoW Forever; skipped on clients without the addon menu
       text = "Tylesser - Vendor Search",
       onClick = ns.PrintHelp,
-      tooltip = { "Search box on the vendor window.", "/vsearch for commands." },
+      tooltip = { L["Search box on the vendor window."], L["%s for commands."]:format("/vsearch") },
     })
   end,
   MERCHANT_SHOW = function()
@@ -81,7 +82,7 @@ SlashCmdList.VENDORSEARCH = function(msg)
   msg = strtrim(msg or ""):lower()
   if msg == "reset" then
     ns.Filter:ResetPosition()
-    print(ns.PREFIX .. "search box moved back to its default place.")
+    print(ns.PREFIX .. L["search box moved back to its default place."])
     return
   end
   if msg == "feedback" then
@@ -93,7 +94,7 @@ SlashCmdList.VENDORSEARCH = function(msg)
     return
   end
   if not MerchantOpen() then
-    print(ns.PREFIX .. "talk to a vendor to search their items. Type /vsearch help for commands.")
+    print(ns.PREFIX .. L["talk to a vendor to search their items. Type %s for commands."]:format("/vsearch help"))
     return
   end
   ns.Filter:Focus()

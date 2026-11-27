@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.0
+
+- **In your language**: German, French, Spanish, Russian and Brazilian Portuguese game clients now show the addon in their language (other clients stay in English). Russian clients get the game's own font for headings, since the addon's fonts have no Cyrillic letters.
+
 ## 1.3.0
 
 - **Unknown recipes** check box under the search box: shows only recipes you haven't learned. Recipes you already know get a small "Known" mark.
