@@ -9,7 +9,8 @@ local Filter = {}
 ns.Filter = Filter
 
 local box, fadeCheck, countText, emptyText
-local unknownCheck, usableCheck, bagsCheck
+local unknownCheck, usableCheck, affordCheck, bagsCheck
+local hookedButtons = {}
 local originalNameColors = {}
 local slotMarks = {}
 local FADED_ALPHA = 0.25
@@ -173,9 +174,10 @@ end
 -- Session-only toggles (reset when the vendor closes).
 Filter.unknownOnly = false
 Filter.usableOnly = false
+Filter.affordOnly = false
 
 function Filter:Criteria()
-  return ns.MakeCriteria(box and box:GetText() or "", Filter.unknownOnly, Filter.usableOnly)
+  return ns.MakeCriteria(box and box:GetText() or "", Filter.unknownOnly, Filter.usableOnly, Filter.affordOnly)
 end
 
 -- Fade mode: keep the vendor's own pages, fade the items that don't match.
@@ -233,7 +235,7 @@ local function UpdatePaging(page, pages, total)
 end
 
 --------------------------------------------------------------------------------
--- Slot marks: bag count "(3)" and "Known" on learned recipes
+-- Slot marks: bag count "(3)" and "Known" on learned recipes, mounts and pets you have
 --------------------------------------------------------------------------------
 -- Our own font strings on each item button. They are refreshed from the button's current ID
 -- after every update, so a slot reused for another item never keeps an old mark.
@@ -282,7 +284,7 @@ function Filter:UpdateMarks()
         local link = index and index > 0 and GetMerchantItemLink(index)
         if link then
           bagText = ns.BagCountText(ns.GetBagCount(link), VendorSearchDB.bagCount)
-          known = ns.IsKnownRecipe(index, link)
+          known = ns.IsKnownItem(index, link)
         end
       end
       marks.bags:SetText(bagText or "")
@@ -342,11 +344,39 @@ local function ApplyFilter()
   emptyText:SetShown(#results == 0)
 end
 
+-- Alt-click on a vendor item opens the Buy window (several stacks at once). Blizzard does nothing
+-- itself for an Alt-click on goods (HandleModifiedItemClick: links, dress up, profession gear).
+local function OnItemClick(itemButton)
+  if not (IsAltKeyDown and IsAltKeyDown()) or (IsShiftKeyDown and IsShiftKeyDown())
+    or (IsControlKeyDown and IsControlKeyDown()) then
+    return
+  end
+  if MerchantFrame.selectedTab ~= 1 or not ns.Buy then
+    return
+  end
+  local index = itemButton:GetID()
+  if index and index > 0 then
+    ns.Buy:Open(index, itemButton)
+  end
+end
+
+local function HookItemButtons()
+  for i = 1, PerPage() do
+    local slot = Slot(i)
+    local itemButton = slot and slot.itemButton
+    if itemButton and not hookedButtons[itemButton] and itemButton.HookScript then
+      hookedButtons[itemButton] = true
+      itemButton:HookScript("OnClick", OnItemClick)
+    end
+  end
+end
+
 -- Called after Blizzard has filled the current merchant page.
 function Filter:Apply()
   if not (box and MerchantFrame and MerchantFrame:IsShown() and MerchantFrame.selectedTab == 1) then
     return
   end
+  HookItemButtons()
   ApplyFilter()
   Filter:UpdateMarks()
 end
@@ -380,12 +410,16 @@ function Filter:UpdateVisibility()
   fadeCheck:SetShown(onMerchantTab)
   unknownCheck:SetShown(onMerchantTab)
   usableCheck:SetShown(onMerchantTab)
+  affordCheck:SetShown(onMerchantTab)
   bagsCheck:SetShown(onMerchantTab)
   countText:SetShown(onMerchantTab)
   if not onMerchantTab then
     emptyText:Hide()
     ResetAlpha()
     HideMarks()
+    if ns.Buy then
+      ns.Buy:Close()
+    end
   end
 end
 
@@ -426,10 +460,14 @@ end
 
 -- On vendor close: empty the search and turn the session toggles off.
 function Filter:Clear()
-  Filter.unknownOnly, Filter.usableOnly = false, false
+  Filter.unknownOnly, Filter.usableOnly, Filter.affordOnly = false, false, false
   if unknownCheck then
     unknownCheck:SetChecked(false)
     usableCheck:SetChecked(false)
+    affordCheck:SetChecked(false)
+  end
+  if ns.Buy then
+    ns.Buy:Close()
   end
   if box and box:GetText() ~= "" then
     box:SetText("")
@@ -507,6 +545,7 @@ function Filter:Create()
     GameTooltip:SetText(L["Vendor Search"], 1, 0.82, 0)
     GameTooltip:AddLine(L["Type part of an item's name, type or slot,"], 1, 1, 1)
     GameTooltip:AddLine(L["e.g. vial, recipe cooking, head."], 1, 1, 1)
+    GameTooltip:AddLine(L["Alt-click a stackable item to buy several stacks."], 1, 1, 1)
     GameTooltip:AddLine(L["Alt-drag to move this box."], 0.6, 0.6, 0.6)
     GameTooltip:Show()
   end)
@@ -556,8 +595,9 @@ function Filter:Create()
   countText:SetPoint("LEFT", fadeLabel, "RIGHT", 6, 0)
 
   -- Second row, under the search box (moves with it).
-  unknownCheck = SmallCheck(L["Unknown recipes"], L["Unknown recipes only"],
-    { L["Show only recipes you haven't learned yet."], L["Resets when you close the vendor."] },
+  unknownCheck = SmallCheck(L["Unknown##items"], L["Unknown only"],
+    { L["Show only recipes you haven't learned yet."], L["Also mounts and pets you don't have yet."],
+      L["Resets when you close the vendor."] },
     function(self)
       Filter.unknownOnly = self:GetChecked() and true or false
       Filter:Refresh(true)
@@ -572,13 +612,22 @@ function Filter:Create()
     end)
   usableCheck:SetPoint("LEFT", unknownCheck.label, "RIGHT", 8, 0)
 
+  affordCheck = SmallCheck(L["Can afford"], L["Items you can afford"],
+    { L["Show only items you can buy now: you have the gold"], L["and the items or currency they cost."],
+      L["Resets when you close the vendor."] },
+    function(self)
+      Filter.affordOnly = self:GetChecked() and true or false
+      Filter:Refresh(true)
+    end)
+  affordCheck:SetPoint("LEFT", usableCheck.label, "RIGHT", 8, 0)
+
   bagsCheck = SmallCheck(L["In bags"], L["Count in bags"],
     { L["Show on each item how many you already have"], L["in your bags and bank, e.g. (3)."] },
     function(self)
       VendorSearchDB.bagCount = self:GetChecked() and true or false
       Filter:UpdateMarks()
     end)
-  bagsCheck:SetPoint("LEFT", usableCheck.label, "RIGHT", 8, 0)
+  bagsCheck:SetPoint("LEFT", affordCheck.label, "RIGHT", 8, 0)
   bagsCheck:SetChecked(VendorSearchDB.bagCount)
 
   emptyText = MerchantFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")

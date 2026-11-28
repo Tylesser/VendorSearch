@@ -30,11 +30,19 @@ local function InventoryChanged()
   RequestRefresh()
 end
 
+-- Gold or currency changed: the "Can afford" filter shows other items.
+local function MoneyChanged()
+  if MerchantOpen() and ns.Filter.affordOnly then
+    RequestRefresh()
+  end
+end
+
 function ns.PrintHelp()
   print(ns.PREFIX .. L["search box on the vendor window. Commands:"])
   print("  /vsearch: " .. L["put the cursor in the search box"])
   print("  /vsearch reset: " .. L["move the search box back to its default place"])
   print("  /vsearch feedback: " .. L["get the link to report a bug or suggest an idea"])
+  print("  " .. L["Alt-click a stackable item to buy several stacks."])
   print("  " .. L["Found a bug or have an idea? Type %s."]:format("/vsearch feedback"))
 end
 
@@ -66,6 +74,11 @@ local handlers = {
   BAG_UPDATE_DELAYED = InventoryChanged,
   NEW_RECIPE_LEARNED = InventoryChanged,
   LEARNED_SPELL_IN_TAB = InventoryChanged,
+  NEW_MOUNT_ADDED = InventoryChanged,
+  NEW_PET_ADDED = InventoryChanged,
+  COMPANION_LEARNED = InventoryChanged,
+  PLAYER_MONEY = MoneyChanged,
+  CURRENCY_DISPLAY_UPDATE = MoneyChanged,
 }
 
 for event in pairs(handlers) do

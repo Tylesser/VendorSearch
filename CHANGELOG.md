@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.0
+
+- **Mounts and pets** get the green **Known** mark too when you already have them, and the **Unknown recipes** check box is now **Unknown**: it shows recipes you haven't learned and mounts and pets you don't have yet.
+- **Can afford** check box: shows only what you can buy right now (the gold, and the items or currency an item costs).
+- **Buy several stacks at once:** Alt-click a stackable item sold for gold, type how many (or click Max), and Buy makes one purchase per stack, as many as your gold, the vendor's stock and your bags allow.
+
 ## 1.4.0
 
 - **In your language**: German, French, Spanish, Russian and Brazilian Portuguese game clients now show the addon in their language (other clients stay in English). Russian clients get the game's own font for headings, since the addon's fonts have no Cyrillic letters.

@@ -10,9 +10,11 @@ A World of Warcraft addon that adds a **search box to the vendor window**. Type 
 - **Filters the vendor's own item grid**, across all pages. The page count updates to the matching items ("Page 1 of 2").
 - Matching items work exactly like normal: **right-click to buy**, tooltips, Shift-click to link, Ctrl-click to preview, drag to your bags. Items that cost tokens or currency still show Blizzard's confirmation.
 - Shows how many items match, or "No items match your search."
-- **Unknown recipes** check box: show only recipes you haven't learned yet. Recipes you already know get a small green **Known** mark.
+- **Unknown** check box: show only recipes you haven't learned yet, and mounts and pets you don't have yet. Recipes you already know, and mounts and pets you already have, get a small green **Known** mark. Mounts and pets are looked up in your mount and pet journals by item ID; on game versions without them the item's "Already known" line decides.
 - **Usable** check box: show only items your character can use.
-- Both combine with the search words (an item must match all of them), work in Fade mode too, and reset when you close the vendor.
+- **Can afford** check box: show only items you can buy right now: you have the gold and the items or currency they cost, and the vendor hasn't sold out.
+- All three combine with the search words (an item must match all of them), work in Fade mode too, and reset when you close the vendor.
+- **Buy several stacks at once:** Alt-click a stackable item sold for gold (reagents, arrows, thread...) and a small window over the vendor asks how many. **+** and **-** add or take one stack, **Max** fills in the most you can get. It shows the cost and what limits it (your gold, the vendor's stock or your bag space), and **Buy** makes one purchase per stack. Nothing is bought until you click Buy. Items that cost tokens or currency keep Blizzard's own confirmation, one purchase at a time; Shift-click still opens Blizzard's own split for up to one stack.
 - **In bags**: each vendor item shows how many you already have in your bags and bank, shown as a small backpack icon and a number, top-right of the item. Untick it to hide the counts.
 - **Fade** option: instead of hiding items, keep the vendor's normal pages and fade the ones that don't match. The match count lists the pages with matches, and the vendor turns to the first one (or press Enter).
 - With an empty search box and the check boxes off, the vendor shows its items exactly as without the addon (only the small counts and Known marks are added).

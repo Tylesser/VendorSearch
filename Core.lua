@@ -1,6 +1,6 @@
 local _, ns = ...
 
--- The "Unknown recipes" and "Usable" toggles are not saved: they reset when the vendor closes,
+-- The "Unknown", "Usable" and "Can afford" toggles are not saved: they reset when the vendor closes,
 -- so the next vendor always opens unfiltered.
 ns.defaults = {
   boxOffset = nil,
@@ -13,7 +13,14 @@ ns.PREFIX = ns.T.Prefix("Vendor Search")
 local GetItemInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
 local GetItemInfoInstant = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
 local GetItemCount = (C_Item and C_Item.GetItemCount) or GetItemCount
+local GetItemFamily = (C_Item and C_Item.GetItemFamily) or GetItemFamily
+local GetItemMaxStackSize = C_Item and C_Item.GetItemMaxStackSize
 local RECIPE_CLASS = (Enum and Enum.ItemClass and Enum.ItemClass.Recipe) or 9
+local MISC_CLASS = (Enum and Enum.ItemClass and Enum.ItemClass.Miscellaneous) or 15
+local BATTLEPET_CLASS = (Enum and Enum.ItemClass and Enum.ItemClass.Battlepet) or 17
+local MISC = Enum and Enum.ItemMiscellaneousSubclass
+local PET_SUBCLASS = (MISC and MISC.CompanionPet) or 2
+local MOUNT_SUBCLASS = (MISC and MISC.Mount) or 5
 
 -- Retail moved the merchant API into C_MerchantFrame; older clients keep the
 -- global function with the same return order.
@@ -73,7 +80,8 @@ function ns.ReadMerchantItem(index)
     if equipLoc and equipLoc ~= "" then
       item.equipSlot = _G[equipLoc]
     end
-    item.isRecipe = ns.IsRecipeLink(link)
+    item.kind = ns.CollectibleKind(link)
+    item.isRecipe = item.kind == "recipe"
   end
   item.searchText = table.concat({
     name, item.itemType or "", item.itemSubType or "", item.equipSlot or "",
@@ -211,24 +219,162 @@ function ns.IsKnownRecipe(index, link)
 end
 
 --------------------------------------------------------------------------------
--- Filters: the search words plus the "Unknown recipes" and "Usable" toggles
+-- Mounts and pets you already have: asked by item ID from the mount and pet
+-- journals; the tooltip's "Already known" line where a client has no journal
 --------------------------------------------------------------------------------
-function ns.MakeCriteria(text, unknownOnly, usableOnly)
+-- A value is only used when it is a plain number / boolean (never a secret).
+local function Number(value)
+  local ok, result = pcall(function()
+    return type(value) == "number" and value + 0 == value and value or nil
+  end)
+  return ok and result or nil
+end
+
+local function Boolean(value)
+  local ok, result = pcall(function()
+    if value == true then
+      return true
+    elseif value == false then
+      return false
+    end
+    return nil
+  end)
+  if ok then
+    return result
+  end
+  return nil
+end
+
+-- itemID, classID, subclassID of an item link.
+local function ItemClass(link)
+  local itemID, classID, subclassID
+  if GetItemInfoInstant then
+    local ok, id, _, _, _, _, class, subclass = pcall(GetItemInfoInstant, link)
+    if ok then
+      itemID, classID, subclassID = id, class, subclass
+    end
+  end
+  if classID == nil and GetItemInfo then
+    local ok, _, _, _, _, _, _, _, _, _, _, _, class, subclass = pcall(GetItemInfo, link)
+    if ok then
+      classID, subclassID = class, subclass
+    end
+  end
+  itemID = Number(itemID) or tonumber(tostring(link):match("item:(%d+)"))
+  return itemID, classID, subclassID
+end
+
+-- The mount an item teaches (mount journal), or nil.
+local function MountOf(itemID)
+  local journal = C_MountJournal
+  if not (itemID and journal and journal.GetMountFromItem) then
+    return nil
+  end
+  local ok, mountID = pcall(journal.GetMountFromItem, itemID)
+  return ok and Number(mountID) or nil
+end
+
+-- The pet species an item teaches (pet journal), or nil.
+local function SpeciesOf(itemID)
+  local journal = C_PetJournal
+  if not (itemID and journal and journal.GetPetInfoByItemID) then
+    return nil
+  end
+  local ok, _, _, _, _, _, _, _, _, _, _, _, _, speciesID = pcall(journal.GetPetInfoByItemID, itemID)
+  return ok and Number(speciesID) or nil
+end
+
+-- "recipe", "mount", "pet" or nil: the things a vendor sells that you learn or collect once.
+function ns.CollectibleKind(link)
+  if not link then
+    return nil
+  end
+  local itemID, classID, subclassID = ItemClass(link)
+  if classID == RECIPE_CLASS then
+    return "recipe"
+  end
+  if (classID == MISC_CLASS and subclassID == MOUNT_SUBCLASS) or MountOf(itemID) then
+    return "mount"
+  end
+  if classID == BATTLEPET_CLASS or (classID == MISC_CLASS and subclassID == PET_SUBCLASS) or SpeciesOf(itemID) then
+    return "pet"
+  end
+  return nil
+end
+
+-- true / false from the journals, nil when the journal can't tell (then the tooltip decides).
+local function JournalKnows(kind, link)
+  local itemID = ItemClass(link)
+  if kind == "mount" then
+    local mountID = MountOf(itemID)
+    if mountID and C_MountJournal.GetMountInfoByID then
+      local ok, _, _, _, _, _, _, _, _, _, _, isCollected = pcall(C_MountJournal.GetMountInfoByID, mountID)
+      if ok then
+        return Boolean(isCollected)
+      end
+    end
+  elseif kind == "pet" then
+    local speciesID = SpeciesOf(itemID)
+    if speciesID and C_PetJournal.GetNumCollectedInfo then
+      local ok, owned = pcall(C_PetJournal.GetNumCollectedInfo, speciesID)
+      owned = ok and Number(owned)
+      if owned then
+        return owned > 0
+      end
+    end
+  end
+  return nil
+end
+
+-- True if the merchant item `index` is a recipe you know, or a mount or pet you already have.
+function ns.IsKnownItem(index, link)
+  local kind = ns.CollectibleKind(link)
+  if not kind then
+    return false
+  end
+  if kind == "recipe" then
+    return ns.IsKnownRecipe(index, link)
+  end
+  local cached = knownCache[link]
+  if cached ~= nil then
+    return cached
+  end
+  local known = JournalKnows(kind, link)
+  if known == nil then
+    local lines = MerchantTooltipLines(index)
+    if not lines then
+      return false
+    end
+    known = ns.LinesSayKnown(lines)
+    if not (known or LinesComplete(lines)) then
+      return known
+    end
+  end
+  knownCache[link] = known
+  return known
+end
+
+--------------------------------------------------------------------------------
+-- Filters: the search words plus the "Unknown", "Usable" and "Can afford" toggles
+--------------------------------------------------------------------------------
+function ns.MakeCriteria(text, unknownOnly, usableOnly, affordOnly)
   return {
     terms = ns.ParseQuery(text),
     unknownOnly = unknownOnly and true or false,
     usableOnly = usableOnly and true or false,
+    affordOnly = affordOnly and true or false,
   }
 end
 
--- False when nothing is typed and both toggles are off: the vendor window is left alone.
+-- False when nothing is typed and every toggle is off: the vendor window is left alone.
 function ns.IsFiltering(criteria)
-  return #criteria.terms > 0 or criteria.unknownOnly or criteria.usableOnly
+  return #criteria.terms > 0 or criteria.unknownOnly or criteria.usableOnly or criteria.affordOnly
 end
 
 -- The item must match the words AND every toggle that is on.
--- isKnown(item) is only called for recipes, and only when "Unknown recipes" is on.
-function ns.ItemPasses(item, criteria, isKnown)
+-- isKnown(item) is only called for recipes, mounts and pets, and only when "Unknown" is on;
+-- canAfford(item) only when "Can afford" is on.
+function ns.ItemPasses(item, criteria, isKnown, canAfford)
   if not ns.Matches(item, criteria.terms) then
     return false
   end
@@ -236,17 +382,217 @@ function ns.ItemPasses(item, criteria, isKnown)
     return false
   end
   if criteria.unknownOnly then
-    if not item.isRecipe then
+    if not (item.kind or item.isRecipe) then
       return false
     end
     isKnown = isKnown or function(it)
-      return ns.IsKnownRecipe(it.index, it.link)
+      return ns.IsKnownItem(it.index, it.link)
     end
     if isKnown(item) then
       return false
     end
   end
+  if criteria.affordOnly and not (canAfford or ns.CanAfford)(item) then
+    return false
+  end
   return true
+end
+
+--------------------------------------------------------------------------------
+-- Can afford: gold and the items or currency an item costs
+--------------------------------------------------------------------------------
+-- What you have of one extra cost (an item in your bags, or a currency), or nil when unknown.
+local function CostOwned(link, currencyName)
+  if not link then
+    return nil
+  end
+  if currencyName then
+    if C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfoFromLink then
+      local ok, info = pcall(C_CurrencyInfo.GetCurrencyInfoFromLink, link)
+      return ok and type(info) == "table" and Number(info.quantity) or nil
+    end
+    return nil
+  end
+  if not GetItemCount then
+    return nil
+  end
+  local ok, count = pcall(GetItemCount, link)
+  return ok and Number(count) or nil
+end
+
+-- Your own sum, for clients where CanAffordMerchantItem gives no answer. Unknown costs don't hide the item.
+function ns.CostsCovered(item)
+  local money = GetMoney and Number(GetMoney())
+  if money and item.price > 0 and money < item.price then
+    return false
+  end
+  if item.hasExtendedCost and GetMerchantItemCostInfo and GetMerchantItemCostItem then
+    local ok, count = pcall(GetMerchantItemCostInfo, item.index)
+    count = ok and Number(count) or 0
+    for i = 1, count do
+      local okCost, _, value, link, currencyName = pcall(GetMerchantItemCostItem, item.index, i)
+      value = okCost and Number(value)
+      if value then
+        local owned = CostOwned(link, currencyName)
+        if owned and owned < value then
+          return false
+        end
+      end
+    end
+  end
+  return true
+end
+
+-- True if you can buy the item now: it isn't sold out and you have the gold and every extra cost.
+function ns.CanAfford(item)
+  if item.numAvailable == 0 then
+    return false
+  end
+  if CanAffordMerchantItem then
+    local ok, result = pcall(CanAffordMerchantItem, item.index)
+    if ok then
+      local can = Boolean(result)
+      if can ~= nil then
+        return can
+      end
+    end
+  end
+  return ns.CostsCovered(item)
+end
+
+--------------------------------------------------------------------------------
+-- Buying several stacks at once (Alt-click a stackable item sold for gold)
+--------------------------------------------------------------------------------
+-- The first value of a protected call, or nil.
+local function First(fn, ...)
+  if not fn then
+    return nil
+  end
+  local ok, value = pcall(fn, ...)
+  return ok and value or nil
+end
+
+-- How many of the item still fit in your bags: free slots of bags that take it,
+-- plus the room left on stacks you already carry. nil when the client can't tell.
+function ns.BagRoom(link)
+  local container = C_Container
+  if not (link and container and container.GetContainerNumFreeSlots) then
+    return nil
+  end
+  local itemID = ItemClass(link)
+  local stack = Number(First(GetItemMaxStackSize, link))
+  if not stack and GetItemInfo then
+    local ok, _, _, _, _, _, _, _, maxStack = pcall(GetItemInfo, link)
+    stack = ok and Number(maxStack) or nil
+  end
+  if not stack or stack < 1 then
+    return nil
+  end
+  local family = Number(First(GetItemFamily, link)) or 0
+  local room = 0
+  for bag = 0, NUM_BAG_SLOTS or 4 do
+    local ok, free, bagFamily = pcall(container.GetContainerNumFreeSlots, bag)
+    free, bagFamily = ok and Number(free) or 0, ok and Number(bagFamily) or 0
+    local takesIt = bagFamily == 0 or (bit and bit.band and bit.band(family, bagFamily) ~= 0) or false
+    if takesIt then
+      room = room + free * stack
+      local slots = container.GetContainerItemInfo and Number(First(container.GetContainerNumSlots, bag)) or 0
+      for slot = 1, slots do
+        local info = First(container.GetContainerItemInfo, bag, slot)
+        if type(info) == "table" and Number(info.itemID) == itemID then
+          local count = Number(info.stackCount)
+          if count and count < stack then
+            room = room + stack - count
+          end
+        end
+      end
+    end
+  end
+  return room
+end
+
+-- The most one Buy can get. info: stackCount (items per vendor unit), price (copper per unit),
+-- money, numAvailable (units, -1 = no limit), room (items that fit, nil = unknown).
+-- Returns the items and what limits them: "money", "stock", "room" or nil.
+ns.BULK_MAX = 2000
+
+function ns.BuyLimit(info)
+  local unit = math.max(1, info.stackCount or 1)
+  local best, reason = math.floor(ns.BULK_MAX / unit) * unit, nil
+  local function Cap(items, why)
+    items = math.floor(items / unit) * unit
+    if items < best then
+      best, reason = items, why
+    end
+  end
+  if (info.price or 0) > 0 and info.money then
+    Cap(math.floor(info.money / info.price) * unit, "money")
+  end
+  if info.numAvailable and info.numAvailable >= 0 then
+    Cap(info.numAvailable * unit, "stock")
+  end
+  if info.room then
+    Cap(info.room, "room")
+  end
+  return math.max(0, best), reason
+end
+
+-- The purchases for `quantity` items: each at most `maxStack` items (the vendor's own
+-- limit per click), in whole vendor units. Returns the list, the items and the cost.
+function ns.BuyPlan(quantity, info)
+  local unit = math.max(1, info.stackCount or 1)
+  local perPurchase = math.max(unit, math.floor((info.maxStack or unit) / unit) * unit)
+  local total = math.floor(math.min(math.max(0, quantity or 0), (ns.BuyLimit(info))) / unit) * unit
+  local plan, left = {}, total
+  while left > 0 do
+    local chunk = math.min(left, perPurchase)
+    plan[#plan + 1] = chunk
+    left = left - chunk
+  end
+  return plan, total, total / unit * (info.price or 0)
+end
+
+-- What the open vendor's item `index` needs for a Buy window, or nil when it can't be
+-- bought in bulk (not stackable, or it costs items or currency: those keep Blizzard's
+-- own confirmation, one purchase at a time).
+function ns.BulkInfo(index)
+  local item = ns.ReadMerchantItem(index)
+  if not item or not item.link or item.hasExtendedCost or not item.isPurchasable or item.numAvailable == 0 then
+    return nil
+  end
+  local maxStack = Number(First(GetMerchantItemMaxStack, index))
+  if not maxStack or maxStack <= 1 then
+    return nil
+  end
+  return {
+    index = index,
+    link = item.link,
+    name = item.name,
+    icon = item.icon,
+    stackCount = math.max(1, item.stackCount),
+    maxStack = maxStack,
+    price = item.price,
+    money = Number(First(GetMoney)) or 0,
+    numAvailable = item.numAvailable,
+    room = ns.BagRoom(item.link),
+  }
+end
+
+-- Buys `quantity` items of the vendor item `index`, one stack per purchase. Only called from
+-- the Buy button. Returns the items asked for and the purchases made (0, 0 when nothing was bought).
+function ns.BuyBulk(index, link, quantity)
+  if not (BuyMerchantItem and GetMerchantItemLink and GetMerchantItemLink(index) == link) then
+    return 0, 0
+  end
+  local info = ns.BulkInfo(index)
+  if not info then
+    return 0, 0
+  end
+  local plan, total = ns.BuyPlan(quantity, info)
+  for _, chunk in ipairs(plan) do
+    BuyMerchantItem(index, chunk)
+  end
+  return total, #plan
 end
 
 --------------------------------------------------------------------------------
